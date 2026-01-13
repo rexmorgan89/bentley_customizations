@@ -2,24 +2,25 @@
 .SYNOPSIS
     Automates the creation of a Gen 2 Hyper-V virtual machine by downloading a
     multi-part VHDX archive from SharePoint Online, extracting it, and provisioning
-    the VM.
+    the VM. This script uses MSAL.PS for authentication and native REST API calls.
 
 .DESCRIPTION
     This script performs the following actions:
-    1.  Connects to a specified SharePoint Online site using PnP.PowerShell.
+    1.  Connects to SharePoint Online using the MSAL.PS module for modern authentication.
     2.  Presents an interactive picker to select a folder from the specified library.
-    3.  Downloads all parts of a 7-Zip archive (.7z.001, .7z.002, etc.) from the selected folder.
-    4.  Uses 7-Zip (7z.exe) to extract the VHDX file from the downloaded archive.
-    5.  Creates a new Gen 2 Hyper-V VM using the extracted VHDX.
-    6.  Configures the VM's memory, network switch, and CPU core count.
-    7.  Cleans up by deleting the downloaded archive files and the extracted VHDX.
+    3.  Sets the name of the new VM to match the selected folder's name.
+    4.  Downloads all parts of a 7-Zip archive (.7z.001, .7z.002, etc.) from the selected folder.
+    5.  Uses 7-Zip (7z.exe) to extract the VHDX file from the downloaded archive.
+    6.  Creates a new Gen 2 Hyper-V VM using the extracted VHDX.
+    7.  Configures the VM's memory, network switch, and CPU core count.
+    8.  Cleans up by deleting the downloaded archive files and the extracted VHDX.
 
 .NOTES
     Author: Gemini Enterprise
-    Version: 2.0
+    Version: 4.0
     Prerequisites:
         - Hyper-V PowerShell Module
-        - PnP.PowerShell Module (Install-Module PnP.PowerShell)
+        - MSAL.PS Module (Run: Install-Module MSAL.PS -Force)
         - 7-Zip installed and 7z.exe accessible via the system's PATH or a direct path.
 #>
 
@@ -40,6 +41,11 @@ process {
         if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
             throw "This script must be run with Administrator privileges."
         }
+    
+        # Check for MSAL.PS module
+        if (-not (Get-Module -ListAvailable -Name MSAL.PS)) {
+            throw "The MSAL.PS module is required. Please run 'Install-Module MSAL.PS -Force' from an administrative PowerShell session."
+        }
 
         # Ensure the 7-Zip executable exists
         if (-NOT (Test-Path $sevenZipPath)) {
@@ -52,27 +58,62 @@ process {
             New-Item -Path $tempPath -ItemType Directory | Out-Null
         }
 
-        # --- 1. Connect to SharePoint Online ---
-        Write-Host "Step 1: Connecting to SharePoint site '$spSiteUrl'..." -ForegroundColor Green
-        Connect-PnPOnline -Url $spSiteUrl -Interactive -ErrorAction Stop
-        $web = Get-PnPWeb
-        Write-Host "Successfully connected to site: $($web.Title)" -ForegroundColor Yellow
+        # --- 1. Connect to SharePoint Online via MSAL.PS ---
+        Write-Host "Step 1: Authenticating to SharePoint Online..." -ForegroundColor Green
+        $spoResourceId = [uri]$spSiteUrl
+        $scope = "$($spoResourceId.Scheme)://$($spoResourceId.Host)/.default"
+    
+        $msalToken = Get-MsalToken -ClientId "1950a258-227b-4e31-a9cf-717495945fc2" -RedirectUri "urn:ietf:wg:oauth:2.0:oob" -Scopes $scope -Interactive
+        $authToken = $msalToken.AccessToken
+        $headers = @{ "Authorization" = "Bearer $authToken" }
+        Write-Host "Successfully obtained authentication token." -ForegroundColor Yellow
 
-        # --- 2. Select Folder and List Files ---
-        Write-Host "Step 2: Accessing folder '$spFolderName' in library '$spLibrary'..." -ForegroundColor Green
-        $folderUrl = "$spLibrary/$spFolderName"
-        $files = Get-PnPFolderItem -FolderSiteRelativeUrl $folderUrl -ItemType File -ErrorAction Stop
-        if (-not $files) {
-            throw "No files found in folder '$folderUrl'. Please check the path."
+
+        # --- 2. Interactively Select a Folder and Set VM Name ---
+        Write-Host "Step 2: Fetching folders from library '$spLibrary' for selection..." -ForegroundColor Green
+        $siteRelativeLibraryUrl = ($spSiteUrl -replace [uri]::new($spSiteUrl).GetLeftPart('Authority'), "") + "/" + $spLibrary
+        $foldersApiUrl = "$spSiteUrl/_api/web/GetFolderByServerRelativeUrl('$siteRelativeLibraryUrl')/Folders?`$select=Name"
+    
+        $folderResponse = Invoke-RestMethod -Uri $foldersApiUrl -Headers $headers -Method Get -ErrorAction Stop
+        if (-not $folderResponse.value) {
+            throw "No folders found in the '$spLibrary' library. Please check the library name and ensure it contains folders."
         }
-        Write-Host "Found $($files.Count) files to download." -ForegroundColor Yellow
 
-        # --- 3. Download Files ---
-        Write-Host "Step 3: Downloading files to '$tempPath'..." -ForegroundColor Green
-        foreach ($file in $files) {
+        $selectedFolder = $folderResponse.value | Out-GridView -Title "Select the Folder Containing the VHDX Archive" -PassThru
+    
+        if (-not $selectedFolder) {
+            throw "No folder was selected. Aborting script."
+        }
+
+        $spFolderName = $selectedFolder.Name
+        Write-Host "User selected folder: '$spFolderName'" -ForegroundColor Yellow
+
+        # DYNAMICALLY SET VM NAME based on the selected folder
+        Write-Host "Setting VM Name based on selected folder..." -ForegroundColor Cyan
+        # Sanitize folder name to create a valid VM Name (allow letters, numbers, hyphens, and underscores)
+        $vmName = $spFolderName -replace '[^a-zA-Z0-9-_]', ''
+        if ([string]::IsNullOrWhiteSpace($vmName)) {
+            throw "The sanitized folder name resulted in an empty string ('$spFolderName'). Cannot create VM."
+        }
+        Write-Host "The new VM will be named: '$vmName'" -ForegroundColor Yellow
+
+        # --- 3. Download Files via REST API ---
+        Write-Host "Step 3: Accessing folder '$spFolderName' and downloading files to '$tempPath'..." -ForegroundColor Green
+        $folderUrl = "$siteRelativeLibraryUrl/$spFolderName"
+        $filesApiUrl = "$spSiteUrl/_api/web/GetFolderByServerRelativeUrl('$folderUrl')/Files?`$select=Name,ServerRelativeUrl"
+    
+        $filesResponse = Invoke-RestMethod -Uri $filesApiUrl -Headers $headers -Method Get -ErrorAction Stop
+        if (-not $filesResponse.value) {
+            throw "No files found in folder '$spFolderName'."
+        }
+        Write-Host "Found $($filesResponse.value.Count) files to download." -ForegroundColor Yellow
+
+        foreach ($file in $filesResponse.value) {
             $targetPath = Join-Path -Path $tempPath -ChildPath $file.Name
+            $fileDownloadUrl = "$spSiteUrl/_api/web/GetFileByServerRelativeUrl('$($file.ServerRelativeUrl)')/`$value"
+        
             Write-Host "Downloading $($file.Name)..."
-            Get-PnPFile -ServerRelativeUrl $file.ServerRelativeUrl -Path $tempPath -Filename $file.Name -AsFile -Force -ErrorAction Stop
+            Invoke-RestMethod -Uri $fileDownloadUrl -Headers $headers -Method Get -OutFile $targetPath -ErrorAction Stop
         }
         Write-Host "All files downloaded successfully." -ForegroundColor Yellow
 
@@ -84,13 +125,7 @@ process {
         }
 
         Write-Host "Starting extraction on '$($firstArchiveFile.FullName)'..."
-        $arguments = @(
-            "e", # Extract command
-            "`"$($firstArchiveFile.FullName)`"",
-            "-o`"$($tempPath)`"", # Output directory
-            "-y" # Assume Yes to all queries
-        )
-
+        $arguments = @("e", "`"$($firstArchiveFile.FullName)`"", "-o`"$($tempPath)`"", "-y")
         $process = Start-Process -FilePath $sevenZipPath -ArgumentList $arguments -Wait -PassThru -NoNewWindow
         if ($process.ExitCode -ne 0) {
             throw "7-Zip extraction failed with exit code $($process.ExitCode)."
@@ -102,11 +137,8 @@ process {
         }
         Write-Host "Successfully extracted '$($extractedVhdx.Name)'." -ForegroundColor Yellow
 
-
         # --- 5. Create the Hyper-V VM ---
         Write-Host "Step 5: Creating Hyper-V virtual machine '$vmName'..." -ForegroundColor Green
-    
-        # Check if a VM with the same name already exists
         if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) {
             throw "A virtual machine named '$vmName' already exists. Please choose a different name or remove the existing VM."
         }
@@ -119,27 +151,16 @@ process {
     
         Write-Host "VM '$vmName' created successfully with the following specifications:" -ForegroundColor Yellow
         Get-VM -Name $vmName | Select-Object VMName, State, Generation, MemoryStartup, ProcessorCount | Format-List
-
-
     }
     catch {
         Write-Error "An error occurred: $($_.Exception.Message)"
-        # You might want to add more specific cleanup here if the script fails mid-way
     }
     finally {
         # --- 6. Cleanup ---
         Write-Host "Step 6: Performing cleanup..." -ForegroundColor Green
     
-        # Disconnect from SharePoint session
-        if (Get-PnPConnection -ErrorAction SilentlyContinue) {
-            Write-Host "Disconnecting from SharePoint..."
-            Disconnect-PnPOnline
-        }
-
         if (Test-Path $tempPath) {
-            # Get reference to extracted VHDX again, in case it was created successfully
             $vhdxFileForCleanup = Get-ChildItem -Path $tempPath -Filter "*.vhdx" | Select-Object -First 1
-
             if ($vhdxFileForCleanup -and (Get-VM -Name $vmName -ErrorAction SilentlyContinue)) {
                 Write-Host "VM created. Deleting downloaded 7-Zip files and the original VHDX file..."
                 Remove-Item -Path (Join-Path -Path $tempPath -ChildPath "*.7z*") -Force -ErrorAction SilentlyContinue
@@ -171,7 +192,6 @@ begin {
     $sevenZipPath = "C:\Program Files\7-Zip\7z.exe" # Path to the 7-Zip executable
 
     # --- Hyper-V VM Configuration ---
-    $vmName = "MyNewVM"
     $vmMemory = 8GB
     $vmSwitch = "Default Switch"
     $vmCpuCount = 10
