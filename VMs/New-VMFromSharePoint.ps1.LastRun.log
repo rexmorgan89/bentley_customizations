@@ -1,0 +1,58 @@
+**********************
+PowerShell transcript start
+Start time: 20260113105251
+Username: BENTLEY\Andrew.Frimpong
+RunAs User: BENTLEY\Andrew.Frimpong
+Configuration Name: 
+Machine: NAOU42364 (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\PowerShell\7\pwsh.dll -NoProfile -ExecutionPolicy Bypass -Command Import-Module 'c:\Users\Andrew.Frimpong\.vscode\extensions\ms-vscode.powershell-2025.4.0\modules\PowerShellEditorServices\PowerShellEditorServices.psd1'; Start-EditorServices -HostName 'Visual Studio Code Host' -HostProfileId 'Microsoft.VSCode' -HostVersion '2025.4.0' -BundledModulesPath 'c:\Users\Andrew.Frimpong\.vscode\extensions\ms-vscode.powershell-2025.4.0\modules' -EnableConsoleRepl -StartupBanner "PowerShell Extension v2025.4.0
+Copyright (c) Microsoft Corporation.
+
+https://aka.ms/vscode-powershell
+Type 'help' to get help.
+" -LogLevel 'Warning' -LogPath 'c:\Users\Andrew.Frimpong\AppData\Roaming\Code\logs\20260113T104800\window1\exthost\ms-vscode.powershell' -SessionDetailsPath 'c:\Users\Andrew.Frimpong\AppData\Roaming\Code\User\globalStorage\ms-vscode.powershell\sessions\PSES-VSCode-38476-815204.json' -FeatureFlags @() 
+Process ID: 36144
+PSVersion: 7.5.4
+PSEdition: Core
+GitCommitId: 7.5.4
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+Transcript started, output file is C:\Users\Andrew.Frimpong\repos\bentley_customizations\VMs\New-VMFromSharePoint.ps1.LastRun.log
+Starting script at '2026-01-13 10:52:51Z'.
+Creating temporary directory at 'C:\Temp\VMCreation'...
+Step 1: Connecting to SharePoint site 'https://bentley.sharepoint.com/sites/ProjectWiseHyperVLibrary'...
+VERBOSE: Cmdlet execution started for         Connect-PnPOnline -Url $spSiteUrl -Interactive -ErrorAction Stop
+VERBOSE: Checking for updates, current version is 3.1.0+e77c52baa06c8a83c39295907302cbde8343514f. See https://pnp.github.io/powershell/articles/configuration.html#disable-or-enable-version-checks for more information.
+VERBOSE: PnP PowerShell Cmdlets (3.1.0)
+VERBOSE: Connecting using Interactive login
+WARNING: Please specify a valid client id for an Entra ID App Registration.
+>> TerminatingError(Connect-PnPOnline): "Specified method is not supported."
+Write-Error: An error occurred: Specified method is not supported.
+Write-Error: An error occurred: Specified method is not supported.
+Step 6: Performing cleanup...
+VERBOSE: Cmdlet execution started for         if (Get-PnPConnection -ErrorAction SilentlyContinue) {
+>> TerminatingError(Get-PnPConnection): "You are not signed in. Please use Connect-PnPOnline to connect."
+Get-PnPConnection: C:\Users\Andrew.Frimpong\repos\bentley_customizations\VMs\New-VMFromSharePoint.ps1:134:13
+Line |
+ 134 |          if (Get-PnPConnection -ErrorAction SilentlyContinue) {
+     |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | You are not signed in. Please use Connect-PnPOnline to connect.
+Get-PnPConnection: C:\Users\Andrew.Frimpong\repos\bentley_customizations\VMs\New-VMFromSharePoint.ps1:134:13
+Line |
+ 134 |          if (Get-PnPConnection -ErrorAction SilentlyContinue) {
+     |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | You are not signed in. Please use Connect-PnPOnline to connect.
+
+WARNING: VM was not created or found. Deleting the entire temp directory for a full cleanup.
+Cleanup complete.
+Script execution finished.
+Finished script at '2026-01-13 10:52:52Z'. Took '00:00:00.9256284' to run.
+**********************
+PowerShell transcript end
+End time: 20260113105252
+**********************
